@@ -1,295 +1,198 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
+# 预设密码
+PRESET_PASSWORD="Aa19850409"
 
-#====================================================
-#   System Request:Centos 7
-#   Author: zlidc.net 
-#   Dscription: Socks5 Installation
-#   Version: 1.0
-#   email: zlidc@gmail.com 
-#   TG: @IX_zhilian 
-#====================================================
+# 输入密码
+echo -n "请输入密码以继续运行脚本："
+read -s INPUT_PASSWORD
+echo
 
-PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
-export PATH
-
-cd "$(
-    cd "$(dirname "$0")" || exit
-    pwd
-)" || exit
-echo > /root/socks.txt
-sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
-sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
-#fonts color
-Green="\033[32m"
-Red="\033[31m"
-# Yellow="\033[33m"
-GreenBG="\033[42;37m"
-RedBG="\033[41;37m"
-Font="\033[0m"
-source '/etc/os-release'
-#notification information
-# Info="${Green}[信息]${Font}"
-OK="${Green}[OK]${Font}"
-error="${Red}[错误]${Font}"
-check_system() {
-    if [[ "${ID}" == "centos" && ${VERSION_ID} -ge 7 ]]; then
-        echo -e "${OK} ${GreenBG} 当前系统为 Centos ${VERSION_ID} ${VERSION} ${Font}"
-        INS="yum"
-    yum remove firewalld -y ; yum install -y iptables-services ; iptables -F ; iptables -t filter -F ; systemctl enable iptables.service ; service iptables save ; systemctl start iptables.service
-
-    elif [[ "${ID}" == "debian" && ${VERSION_ID} -ge 8 ]]; then
-        echo -e "${OK} ${GreenBG} 当前系统为 Debian ${VERSION_ID} ${VERSION} ${Font}"
-        INS="apt"
-        $INS update
-        ## 添加 apt源
-    elif [[ "${ID}" == "ubuntu" && $(echo "${VERSION_ID}" | cut -d '.' -f1) -ge 16 ]]; then
-        echo -e "${OK} ${GreenBG} 当前系统为 Ubuntu ${VERSION_ID} ${UBUNTU_CODENAME} ${Font}"
-        INS="apt"
-        $INS update
-    else
-        echo -e "${Error} ${RedBG} 当前系统为 ${ID} ${VERSION_ID} 不在支持的系统列表内，安装中断 ${Font}"
-        exit 1
-    fi
-    $INS -y install lsof wget curl
-
-}
-
-
-is_root() {
-    if [ 0 == $UID ]; then
-        echo -e "${OK} ${GreenBG} 当前用户是root用户，进入安装流程 ${Font}"
-        sleep 3
-    else
-        echo -e "${Error} ${RedBG} 当前用户不是root用户，请切换到使用 'sudo -i' 切换到root用户后重新执行脚本 ${Font}"
-        exit 1
-    fi
-}
-
-judge() {
-    if [[ 0 -eq $? ]]; then
-        echo -e "${OK} ${GreenBG} $1 完成 ${Font}"
-        sleep 1
-    else
-        echo -e "${Error} ${RedBG} $1 失败${Font}"
-        exit 1
-    fi
-}
-
-sic_optimization() {
-    # 最大文件打开数
-    sed -i '/^\*\ *soft\ *nofile\ *[[:digit:]]*/d' /etc/security/limits.conf
-    sed -i '/^\*\ *hard\ *nofile\ *[[:digit:]]*/d' /etc/security/limits.conf
-    echo '* soft nofile 65536' >>/etc/security/limits.conf
-    echo '* hard nofile 65536' >>/etc/security/limits.conf
-
-    # 关闭 Selinux
-    if [[ "${ID}" == "centos" ]]; then
-        sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
-        setenforce 0
-    fi
-
-}
-
-port_set() {
-        read -rp "请设置连接端口（默认:36009）:" ss_port
-        [[ -z ${ss_port} ]] && ss_port="36009"
-}
-
-port_exist_check() {
-    if [[ 0 -eq $(lsof -i:"${ss_port}" | grep -i -c "listen") ]]; then
-        echo -e "${OK} ${GreenBG} $1 端口未被占用 ${Font}"
-        sleep 1
-    else
-        echo -e "${Error} ${RedBG} 检测到 ${ss_port} 端口被占用，以下为 ${ss_port} 端口占用信息 ${Font}"
-        lsof -i:"${ss_port}"
-        echo -e "${OK} ${GreenBG} 5s 后将尝试自动 kill 占用进程 ${Font}"
-        sleep 5
-        lsof -i:"${ss_port}" | awk '{print $2}' | grep -v "PID" | xargs kill -9
-        echo -e "${OK} ${GreenBG} kill 完成 ${Font}"
-        sleep 1
-    fi
-}
-
-user_set() {
-    read -rp  "请设置ss5账户。默认:zlidc.net）:" ss_user
-    [[ -z ${ss_user} ]] && ss_user="zlidc.net"
-    read -rp "请设置ss5连接密码。默认:zlidc.net）:" ss_pass
-    [[ -z ${ss_pass} ]] && ss_pass="zlidc.net"
-}
-
-
-
-ip_list() {
-ips=($(ip addr show |grep -v inet6 | awk '/global/{print $2}' | grep -Eo "^[0-9]{1,3}(.[0-9]{1,3}){3}"))
-ip addr show | grep -v inet6 | awk '/global/{print $2}' | grep -Eo "^[0-9]{1,3}(.[0-9]{1,3}){3}"
-echo "可用IP个数"
-ip addr show | grep -v inet6 | awk '/global/{print $2}' | grep -Eo "^[0-9]{1,3}(.[0-9]{1,3}){3}" | wc -l
-
-}
-ss_install() {
-
-# Socks5 Installation
-if [ -f /usr/local/sbin/socks ]; then
-    echo "Xray Installd"
-else
-    wget -O /usr/local/sbin/socks --no-check-certificate https://my.oofeye.com/socks
-    chmod +x /usr/local/sbin/socks
+# 验证密码
+if [ "$INPUT_PASSWORD" != "$PRESET_PASSWORD" ]; then
+    echo "密码错误，无法运行脚本。"
+    exit 1
 fi
 
+echo "密码正确，开始执行脚本。"
 
-cat <<EOF > /etc/systemd/system/sockd.service
-[Unit]
-Description=Socks5 Service
-After=network.target nss-lookup.target
+# 配置文件目录
+CONFIG_DIR="/etc/shadowsocks"
+mkdir -p $CONFIG_DIR
 
-[Service]
-User=root
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
-ExecStart=/usr/local/sbin/socks run -config /etc/socks/config.toml
-Restart=on-failure
-RestartPreventExitStatus=23
-LimitNPROC=10000
-LimitNOFILE=1000000
+# 默认配置
+DEFAULT_PASSWORD="zlidc.net"
+DEFAULT_PORT=36009
+DEFAULT_METHODS=("aes-256-gcm" "aes-192-gcm" "chacha20-ietf-poly1305")
 
-[Install]
-WantedBy=multi-user.target
+# 系统检查与依赖安装
+check_system() {
+    echo "检查系统类型..."
+    if [ -f /etc/debian_version ]; then
+        OS="debian"
+        PKG_MANAGER="apt"
+    elif [ -f /etc/redhat-release ]; then
+        OS="centos"
+        PKG_MANAGER="yum"
+    else
+        echo "当前系统不受支持，请使用 Debian 8+/Ubuntu 16+/CentOS 7+。"
+        exit 1
+    fi
+
+    echo "安装必要工具..."
+    sudo $PKG_MANAGER update -y
+    sudo $PKG_MANAGER install -y lsof wget curl
+}
+
+# 系统优化
+system_optimization() {
+    echo "优化系统设置..."
+    sed -i '/^\*\s*soft\s*nofile/d' /etc/security/limits.conf
+    sed -i '/^\*\s*hard\s*nofile/d' /etc/security/limits.conf
+    echo '* soft nofile 65536' >> /etc/security/limits.conf
+    echo '* hard nofile 65536' >> /etc/security/limits.conf
+}
+
+# 端口检查与处理
+check_port() {
+    local port=$1
+    if lsof -i:"$port" &>/dev/null; then
+        echo "检测到端口 $port 被占用，尝试释放..."
+        lsof -i:"$port" | awk '{print $2}' | grep -v "PID" | xargs kill -9
+        echo "端口 $port 已释放。"
+    else
+        echo "端口 $port 可用。"
+    fi
+}
+
+# 获取所有公网 IP
+get_public_ips() {
+    ip -4 addr show | grep -oP '(?<=inet\s)\d+\.\d+\.\d+\.\d+' | grep -vE "^(127|10|192\.168|172\.(1[6-9]|2[0-9]|3[0-1]))\."
+}
+
+# 安装 Shadowsocks
+install_shadowsocks() {
+    echo "开始安装 Shadowsocks..."
+
+    if ! command -v ss-server &>/dev/null; then
+        echo "安装 Shadowsocks-libev..."
+        if [ "$OS" == "debian" ]; then
+            sudo $PKG_MANAGER install -y shadowsocks-libev
+        elif [ "$OS" == "centos" ]; then
+            sudo $PKG_MANAGER install -y epel-release
+            sudo $PKG_MANAGER install -y shadowsocks-libev
+        fi
+    fi
+
+    if ! command -v ss-server &>/dev/null; then
+        echo "Shadowsocks 安装失败，请检查网络或软件源。"
+        exit 1
+    fi
+
+    echo "Shadowsocks 已成功安装。"
+
+    # 自定义配置
+    read -rp "请输入 Shadowsocks 密码 (默认: $DEFAULT_PASSWORD): " PASSWORD
+    PASSWORD=${PASSWORD:-$DEFAULT_PASSWORD}
+
+    read -rp "请输入端口 (默认: $DEFAULT_PORT): " PORT
+    PORT=${PORT:-$DEFAULT_PORT}
+
+    echo "可用的加密协议："
+    for i in "${!DEFAULT_METHODS[@]}"; do
+        echo "$((i+1)). ${DEFAULT_METHODS[$i]}"
+    done
+
+    read -rp "请选择加密协议 (默认: 1): " METHOD_INDEX
+    METHOD_INDEX=${METHOD_INDEX:-1}
+    METHOD=${DEFAULT_METHODS[$((METHOD_INDEX-1))]}
+
+    # 获取公网 IP
+    PUBLIC_IPS=($(get_public_ips))
+
+    if [ ${#PUBLIC_IPS[@]} -eq 0 ]; then
+        echo "未检测到公网 IP，请检查网络配置。"
+        exit 1
+    fi
+
+    echo "检测到以下公网 IP："
+    for IP in "${PUBLIC_IPS[@]}"; do
+        echo "$IP"
+    done
+
+    # 为每个 IP 配置 Shadowsocks
+    OUTPUT_CONFIG=()
+    for IP in "${PUBLIC_IPS[@]}"; do
+        CONFIG_FILE="$CONFIG_DIR/ss-$IP-$PORT.json"
+        cat > $CONFIG_FILE <<EOF
+{
+    "server": "$IP",
+    "server_port": $PORT,
+    "password": "$PASSWORD",
+    "method": "$METHOD",
+    "timeout": 300,
+    "fast_open": true
+}
 EOF
 
-systemctl daemon-reload
-systemctl enable sockd.service &> /dev/null
+        # 启动服务
+        nohup ss-server -c $CONFIG_FILE &>/var/log/ss-$IP-$PORT.log &
+        OUTPUT_CONFIG+=("$IP|$PORT|$METHOD|$PASSWORD")
+    done
+
+    echo "Shadowsocks 服务已配置如下："
+    for line in "${OUTPUT_CONFIG[@]}"; do
+        echo "$line"
+    done
+
+    echo "如果工具有疑问，请联系 zlidc.net"
 }
 
-
-config_install() {
-#Socks5 Configuration
-mkdir -p /etc/socks
-echo  "[routing]" > /etc/socks/config.toml
-for ((i = 0;i < ${#ips[@]}; i++)); do
-cat <<EOF >> /etc/socks/config.toml
-[[routing.rules]]
-type = "field"
-inboundTag = "$((i+1))"
-outboundTag = "$((i+1))"
-
-EOF
-done
-for ((i = 0;i < ${#ips[@]}; i++)); do
-echo "${ips[i]} $ss_port $ss_user $ss_pass" >> /root/socks.txt
-cat <<EOF >> /etc/socks/config.toml
-[[inbounds]]
-listen = "${ips[i]}"
-port = "$ss_port"
-protocol = "socks"
-tag = "$((i+1))"
-
-
-[inbounds.settings]
-auth = "password"
-udp = true
-
-[[inbounds.settings.accounts]]
-user = "$ss_user"
-pass = "$ss_pass"
-
-[inbounds.streamSettings]
-network = "tcp"
-
-
-[[outbounds]]
-sendThrough = "${ips[i]}"
-protocol = "freedom"
-tag = "$((i+1))"
-
-EOF
-done
-
-systemctl restart sockd.service
+# 删除 Shadowsocks
+remove_shadowsocks() {
+    echo "停止并删除 Shadowsocks..."
+    pkill ss-server
+    rm -rf $CONFIG_DIR
+    echo "Shadowsocks 已删除。"
 }
 
-is_root
-check_system
-
-
-install() {
-    ip_list
-    sic_optimization
-    port_set
-    port_exist_check
-    user_set
-    ss_install
-    config_install
-    judge "安装"
+# 更新 Shadowsocks
+update_shadowsocks() {
+    echo "更新 Shadowsocks 配置..."
+    remove_shadowsocks
+    install_shadowsocks
 }
 
-bbr_install() {
-    [ -f "tcp.sh" ] && rm -rf ./tcp.sh
-    wget -N -O /root/tcp.sh --no-check-certificate "https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh" && chmod +x /root/tcp.sh && bash /root/tcp.sh
-
-}
-del_ss5() {
-
-    systemctl stop sockd.service
-    rm -rf /usr/local/bin/socks
-    rm -rf /etc/systemd/system/sockd.service
-    systemctl daemon-reload
-    rm -rf /etc/socks/config.toml
-    judge "删除 ss5 "
-}
-update_ss5() {
-    ip_list
-    port_set
-        port_exist_check
-        user_set
-    rm -rf /etc/socks/config.toml
-    config_install
-    systemctl restart sockd.service
-    judge "跟改成功 "
-}
-
+# 菜单
 menu() {
-    echo -e "\t ss5 安装管理脚本 "
-    echo -e "\tSystem Request:Debian 9+/Ubuntu 20.04+/Centos 7+"
-    echo -e "\t无法使用请联系zldic.net\n"
+    echo "\n—————————————— 安装向导 ——————————————"
+    echo "1. 安装 Shadowsocks"
+    echo "2. 删除 Shadowsocks"
+    echo "3. 更新 Shadowsocks"
+    echo "99. 退出"
+    echo "——————————————"
 
-    echo -e "—————————————— 安装向导 ——————————————"
-    echo -e "${Green} 接受定制,特殊要求 等可以联系zlidc.net${Font}"
-    echo -e "${Green}1.${Font}  安装ss5"
-    echo -e "${Green}2.${Font}  停止ss5"
-    echo -e "${Green}3.${Font}  删除ss5"
-    echo -e "${Green}4.${Font}  更改端口账户密码"
-    echo -e "${Green}99.${Font}  退出 \n"
-
-
-    read -rp "请输入数字：" menu_num
-    case $menu_num in
-    1)
-        install
-        ;;
-    2)
-        systemctl stop sockd.service
-        judge "停止"
-        ;;
-    3)
-        del_ss5
-        ;;
-    4)
-        update_ss5
-        ;;
-    99)
-        exit 0
-        ;;
-    *)
-    echo -e "${RedBG}请输入正确的数字${Font}"
-        ;;
+    read -rp "请输入操作编号: " CHOICE
+    case $CHOICE in
+        1)
+            check_system
+            system_optimization
+            install_shadowsocks
+            ;;
+        2)
+            remove_shadowsocks
+            ;;
+        3)
+            update_shadowsocks
+            ;;
+        99)
+            exit 0
+            ;;
+        *)
+            echo "无效的输入，请重新选择。"
+            menu
+            ;;
     esac
-
 }
-
 
 menu
-
-
-cat /root/socks.txt
